@@ -1,0 +1,4 @@
+.env
+mongodb/
+redisdb/
+node_modules/
