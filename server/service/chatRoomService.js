@@ -4,7 +4,6 @@ const Chat = require('../model/Chat');
 const Member = require('../model/Member');
 const Friend = require('../model/Friend');
 const chatService = require('./chatService');
-const {getIO} = require('../socket');
 const CustomError = require('../error/CustomError');
 
 async function createChatRoom(memberId, roomName) {
@@ -79,19 +78,7 @@ async function inviteRoom(memberId, roomId, inviteList) {
   }
 }
 
-//소속된 채팅방 입장
-async function joinChatRoom(io, socket) {
-  socket.on('join-room', async ({roomId}) => {
-    socket.join(roomId);
-    const io = getIO();
-    const memberId = socket.member.id;
-    const readInfo = await chatService.readAll(roomId, memberId);
-    io.to(roomId).emit('update-read-all', {joinedId: memberId, readInfo});
-  });
-}
-
 // 채팅방 삭제(s)
-
 async function deleteChatRoom(memberId, roomId) {
   try {
     const chatroom = await ChatRoom.findById(roomId);
@@ -128,8 +115,7 @@ async function setAdmin(sender, receiver, roomId) {
 
     chatroom.admin = receiver;
     await chatroom.save();
-    const io = getIO();
-    io.to(roomId).emit('refresh-members');
+    
     return {success: true, message: "관리자 권한이 위임되었습니다."};
   } catch (err) {
     console.error("관리 권한 위임 중 오류 발생: ", err);
@@ -137,52 +123,48 @@ async function setAdmin(sender, receiver, roomId) {
   }
 }
 
-//일시 퇴장
-async function leaveChatRoom(io, socket) {
-  socket.on('leave-room', async ({roomId}) => {
-    socket.leave(roomId);
-  });
-}
-
 //영구 퇴장
 async function withdrawChatRoom(memberId, roomId) {
-  const leftMember = await Member.findById(memberId);
-  if (!leftMember) throw new CustomError('USER_NOT_FOUND', "회원 정보를 찾을 수 없습니다.");
-  const isIn = await chatService.checkOn(roomId, memberId);
-  if (!isIn) throw new CustomError('FORBIDDEN', "채팅방에 속하지 않는 회원입니다.");
-  const chatroom = await ChatRoom.findById(roomId);
-  if (memberId.toString() === chatroom.admin.toString() && chatroom.members.length > 1)
-    throw new CustomError('REQUEST_CONFLICT', '퇴장 전 관리자 권한을 위임해주세요.');
+  try {
+    const leftMember = await Member.findById(memberId);
+    if (!leftMember) throw new CustomError('USER_NOT_FOUND', "회원 정보를 찾을 수 없습니다.");
+    const isIn = await chatService.checkOn(roomId, memberId);
+    if (!isIn) throw new CustomError('FORBIDDEN', "채팅방에 속하지 않는 회원입니다.");
+    const chatroom = await ChatRoom.findById(roomId);
+    if (memberId.toString() === chatroom.admin.toString() && chatroom.members.length > 1)
+      throw new CustomError('REQUEST_CONFLICT', '퇴장 전 관리자 권한을 위임해주세요.');
 
-  await Member.updateOne(
-    {_id: memberId},
-    {$pull: {"chatroom": roomId}}
-  );
+    await Member.updateOne(
+      {_id: memberId},
+      {$pull: {"chatroom": roomId}}
+    );
 
-  await ChatRoom.updateOne(
-    {_id: roomId},
-    {$pull: {members: {member: memberId}}}
-  );
+    await ChatRoom.updateOne(
+      {_id: roomId},
+      {$pull: {members: {member: memberId}}}
+    );
 
-  const remainingMembers = await chatroom
-    .populate({
-      path:"members",
-      select: "name"
-    });
-    
-  if (remainingMembers.members.length === 0) {
-    await ChatRoom.deleteOne({_id: roomId});
-  } else {
-    const systemMessage = await Chat.create({
-      sender: global.SYSTEM_MEMBER_ID,
-      roomId: roomId,
-      content: `${leftMember.name}님께서 퇴장하셨습니다.`,
-      system: true
-    });
-    const io = getIO();
-    io.to(roomId).emit('leave-notice', {systemMessage});
+    const remainingMembers = await chatroom.populate({
+        path:"members",
+        select: "name"
+      });
+      
+    if (remainingMembers.members.length === 0) {
+      await ChatRoom.deleteOne({_id: roomId});
+      return {success: true, message: "채팅방 퇴장이 완료되었습니다."};
+    } else {
+      const systemMessage = await Chat.create({
+        sender: global.SYSTEM_MEMBER_ID,
+        roomId: roomId,
+        content: `${leftMember.name}님께서 퇴장하셨습니다.`,
+        system: true
+      });
+      return {success: true, message: "채팅방 퇴장이 완료되었습니다.", systemMessage};
+    }
+  } catch (err) {
+      console.error('채팅방 퇴장 오류: ', err);
+      throw err;
   }
-  return {success: true, message: "채팅방 퇴장이 완료되었습니다."};
 }
 
 //채팅방 목록
@@ -243,7 +225,7 @@ async function showChatRoom(memberId) {
 
     return rooms.sort((a, b) => new Date(b.sortKey) - new Date(a.sortKey));
   } catch (err) {
-    console.error(err);
+    console.error('채팅방 목록 오류: ', err);
     throw err;
   }
 }
@@ -261,10 +243,6 @@ async function getMembers(memberId, roomId) {
     if (!chatroom) throw new CustomError('NOT_FOUND', '채팅방 정보를 찾을 수 없습니다.');
     const isIn = await chatService.checkOn(roomId, memberId);
     if (!isIn) throw new CustomError('FORBIDDEN', '참여자 조회 권한이 없습니다.');
-
-    /*
-    const memberList = chatroom.members.filter(m => m.member)
-      .map(m => ({_id: m.member._id, name: m.member.name}));*/
 
     const memberList = await Promise.all(
       chatroom.members.filter(m => m.member).map(async m => {
@@ -296,7 +274,7 @@ async function getMembers(memberId, roomId) {
       admin: chatroom.admin,
     };
   } catch (err) {
-    console.error(err);
+    console.error('참여자 조회 오류: ', err);
     throw err;
   }
 }
@@ -332,5 +310,5 @@ async function getChatRoom(memberId, roomId) {
   }
 }
 
-module.exports = {createChatRoom, inviteRoom, joinChatRoom, deleteChatRoom, setAdmin,
-   leaveChatRoom, withdrawChatRoom, showChatRoom, getMembers, changeRoomName, getChatRoom};
+module.exports = {createChatRoom, inviteRoom, deleteChatRoom, setAdmin,
+   withdrawChatRoom, showChatRoom, getMembers, changeRoomName, getChatRoom};

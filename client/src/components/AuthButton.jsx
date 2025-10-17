@@ -4,11 +4,11 @@ import {useAuth} from '../auth/useAuth';
 
 export default function AuthButton() {
     const {memberId, logout} = useAuth();
-    const socket = useSocket();
+    const {socket, disconnect} = useSocket();
     const navigate = useNavigate();
 
     function handleLogout() {
-        socket.disconnect();
+        disconnect();
         logout();
     }
 

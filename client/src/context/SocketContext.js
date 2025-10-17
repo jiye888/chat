@@ -18,7 +18,6 @@ export function SocketProvider({children}) {
 
     useEffect(() => {
         const socket = socketRef.current;
-        //if (!socket) return;
 
         if (memberId && accessTokenRef.current) {
             socket.auth = {token: accessTokenRef.current};
@@ -66,7 +65,6 @@ export function SocketProvider({children}) {
 
         socket.on('auth-error', async () => {
             try {
-                //const accessToken = refreshAccessToken();
                 socket.auth = {token: accessTokenRef.current};
             } catch (err) {
                 console.error(err);

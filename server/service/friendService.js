@@ -1,4 +1,3 @@
-const {getIO} = require('../socket');
 const Friend = require('../model/Friend');
 const Member = require('../model/Member');
 const FriendRequest = require('../model/FriendRequest');
@@ -6,21 +5,23 @@ const mongoose = require('../db/mongoose');
 const CustomError = require('../error/CustomError');
 
 async function sendFriendRequest(sender, receiver) {
-    if (sender === receiver) throw new CustomError('BAD_REQUEST', '자신에게는 요청할 수 없습니다.');
+    try {
+        if (sender === receiver) throw new CustomError('BAD_REQUEST', '자신에게는 요청할 수 없습니다.');
 
-    const existing = await Friend.findOne({sender: sender, receiver: receiver});
-    if (existing) throw new CustomError('USER_CONFLICT', '이미 요청을 보냈습니다.');
+        const existing = await Friend.findOne({sender: sender, receiver: receiver});
+        if (existing) throw new CustomError('USER_CONFLICT', '이미 요청을 보냈습니다.');
 
-    const reverse = await Friend.findOne({sender: receiver, receiver: sender});
-    if (reverse) throw new CustomError('USER_CONFLICT', '상대방이 이미 요청을 보냈습니다.');
+        const reverse = await Friend.findOne({sender: receiver, receiver: sender});
+        if (reverse) throw new CustomError('USER_CONFLICT', '상대방이 이미 요청을 보냈습니다.');
 
-    const request = new FriendRequest({sender: sender, receiver: receiver});
-    await request.save();
+        const request = new FriendRequest({sender: sender, receiver: receiver});
+        await request.save();
 
-    const io = getIO();
-    io.to(receiver.toString()).emit('send-friend-request');
-
-    return {success: true, message: '친구 요청에 성공했습니다.', request};
+        return {success: true, message: '친구 요청에 성공했습니다.', request};
+    } catch (err) {
+        console.error('친구 요청 전송 오류: ', err);
+        throw err;
+    }
 }
 
 async function countUnreadRequest(memberId) {
@@ -57,6 +58,7 @@ async function acceptFriendRequest(memberId, requestId) {
         ]);
     } catch (err) {
         console.error('친구 요청 수락 오류: ', err);
+        throw err;
     }
 
     return {success: true, message: '친구 요청을 수락하였습니다.'};
@@ -78,9 +80,8 @@ async function cancelFriendRequest(memberId, requestId) {
     if (request.sender.toString() !== memberId)
         throw new CustomError('FORBIDDEN', '요청을 취소할 권한이 없습니다.');
     await request.deleteOne();
-    const io = getIO();
-    io.to(request.receiver.toString()).emit('friend-request-cancel', {id: request._id});
-    return {success: true, message: '친구 요청 취소가 완료되었습니다.'};
+    
+    return {success: true, message: '친구 요청 취소가 완료되었습니다.', receiver: request.receiver};
 }
 
 async function setNickName(memberId, friendId, nickname) {

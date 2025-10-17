@@ -486,8 +486,6 @@ export default function Chat() {
                     isProgrammaticScroll.current = false;
                 });
             }
-            //socket.emit으로 document.visibilityState 확인해서
-            //addRead(chatService) 처리하도록?????
             socket.emit('add-read', ({roomId, chat}));
         });
 

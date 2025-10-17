@@ -1,4 +1,5 @@
 const chatRoomService = require('../service/chatRoomService');
+const chatService = require('../service/chatService');
 const {getIO} = require('../socket');
 const CustomError = require('../error/CustomError');
 
@@ -32,6 +33,26 @@ async function showChatRoom(req, res, next) {
         console.error('채팅방 조회 오류: ', err);
         next(err);
     }
+}
+
+async function joinChatRoom(io, socket) {
+  socket.on('join-room', async ({roomId}) => {
+    try {
+      socket.join(roomId);
+      const memberId = socket.member.id;
+      const readInfo = await chatService.readAll(roomId, memberId);
+      io.to(roomId).emit('update-read-all', {joinedId: memberId, readInfo});
+    } catch (err) {
+        console.error('채팅방 입장 오류: ', err);
+        next(err);
+    }
+  });
+}
+
+async function leaveChatRoom(io, socket) {
+  socket.on('leave-room', async ({roomId}) => {
+    socket.leave(roomId);
+  });
 }
 
 async function deleteChatRoom(req, res, next) {
@@ -78,7 +99,11 @@ async function setAdmin(req, res, next) {
         const receiver = req.body.receiver;
         const roomId = req.params.roomId;
         const result = await chatRoomService.setAdmin(memberId, receiver, roomId);
-        if (result.success) return res.status(200).json(result);
+        if (result.success) {
+            const io = getIO();
+            io.to(roomId).emit('refresh-members');
+            return res.status(200).json(result);
+        }
         return next(new CustomError('INTERNAL_SERVER_ERROR'));
     } catch (err) {
         console.error('관리자 변경 오류: ', err);
@@ -91,7 +116,13 @@ async function withdrawChatRoom(req, res, next) {
         const memberId = req.member.id.toString();
         const roomId = req.params.roomId.toString();
         const result = await chatRoomService.withdrawChatRoom(memberId, roomId);
-        if (result.success) return res.status(200).json(result);
+        if (result.success) {
+            if (result.systemMessage) {
+                const io = getIO();
+                io.to(roomId).emit('leave-notice', {systemMessage});
+            }
+            return res.status(200).json(result);
+        }
         return next(new CustomError('INTERNAL_SERVER_ERROR'));
     } catch (err) {
         console.error('채팅방 퇴장 오류: ', err);
@@ -140,5 +171,5 @@ async function getChatRoom(req, res, next) {
     }
 }
 
-module.exports = {createChatRoom, showChatRoom, deleteChatRoom, inviteRoom, setAdmin,
-    withdrawChatRoom, getMembers, changeRoomName, getChatRoom};
+module.exports = {createChatRoom, showChatRoom, joinChatRoom, leaveChatRoom, deleteChatRoom,
+    inviteRoom, setAdmin, withdrawChatRoom, getMembers, changeRoomName, getChatRoom};

@@ -7,8 +7,6 @@ export function useNotification() {
     const [badgeCount, setBadgeCount] = useState(0);
     const {socket} = useSocket();
     const {memberId} = useAuth();
-    //const auth = useAuth();
-    //const memberId = auth?.memberId;
 
     useEffect(() => {
         if (!memberId) {

@@ -8,31 +8,46 @@ const CustomError = require('../error/CustomError');
 require ('dotenv').config({path: path.join(__dirname, '.env')});
 
 async function generateRefreshToken(member) {
-    const refreshToken = jwt.sign(
-        {id: member.id, email: member.email},
-        process.env.JWT_SECRET_R,
-        {expiresIn: '10d'}
-    );
+    try {
+        const refreshToken = jwt.sign(
+            {id: member.id, email: member.email},
+            process.env.JWT_SECRET_R,
+            {expiresIn: '10d'}
+        );
 
-    await auth.saveToken(refreshToken, member.email);
-    return refreshToken;
+        await auth.saveToken(refreshToken, member.email);
+        return refreshToken;
+    } catch (err) {
+        console.error('리프레시 토큰 생성 오류: ', err);
+        throw err;
+    }
 }
 
 function generateAccessToken(member) {
-    return jwt.sign(
-        {id: member.id, email: member.email},
-        process.env.JWT_SECRET_A,
-        {expiresIn: '30m'}
-    );
+    try {
+        return jwt.sign(
+            {id: member.id, email: member.email},
+            process.env.JWT_SECRET_A,
+            {expiresIn: '30m'}
+        );
+    } catch (err) {
+        console.error('엑세스 토큰 생성 오류: ', err);
+        throw err;
+    }
 }
 
 const comparePW = async (inputPassword, existPassword) => {
-    if (inputPassword) {
-        const isPassword = await bcrypt.compare(inputPassword, existPassword);
-        if (!isPassword) throw new CustomError('INVALID_CREDENTIALS');
-        return isPassword;
-    } else {
-        throw new CustomError('INVALID_INPUT', '비밀번호를 입력해주세요.');
+    try {
+        if (inputPassword) {
+            const isPassword = await bcrypt.compare(inputPassword, existPassword);
+            if (!isPassword) throw new CustomError('INVALID_CREDENTIALS');
+            return isPassword;
+        } else {
+            throw new CustomError('INVALID_INPUT', '비밀번호를 입력해주세요.');
+        }
+    } catch (err) {
+        console.error('패스워드 확인 오류: ', err);
+        throw err;
     }
 }
 

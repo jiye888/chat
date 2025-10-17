@@ -1,7 +1,6 @@
 const Chat = require('../model/Chat');
 const ChatRoom = require('../model/ChatRoom');
 const Member = require('../model/Member');
-const {onlineMembers} = require('../onlineMembers');
 const mongoose = require('../db/mongoose');
 const CustomError = require('../error/CustomError');
 
@@ -12,71 +11,60 @@ async function checkOn(roomId, memberId) {
   return isIn;
 }
 
-async function sendMessage(io, socket) {
-    socket.on('save-message', async ({roomId, message}) => {
-        try {
-            const memberId = socket.member.id;
-            const chat = new Chat({
-                sender: memberId,
-                roomId: roomId,
-                content: message,
-            });
-            await chat.save();
+async function saveMessageAndUpdateRead(memberId, roomId, content) {
+    try {
+        const chat = new Chat({
+            sender:memberId, roomId, content,
+        });
+        await chat.save();
 
-            const chatroom = await ChatRoom.findOneAndUpdate(
-                {_id: roomId},
-                {$set: {
-                    'readBy.$[rm].readId': chat._id,
-                    lastMessage: chat._id,
-                }},
-                {
-                    new: true,
-                    arrayFilters: [{"rm.member": memberId}]
-                }
-            );
+        const chatroom = await ChatRoom.findOneAndUpdate(
+            {_id: roomId},
+            {$set: {
+                'readBy.$[rm].readId': chat._id,
+                lastMessage: chat._id,
+            }},
+            {
+                new: true,
+                arrayFilters: [{"rm.member": memberId}]
+            }
+        );
 
-            await chat.populate('sender', 'id name');
-            const chatObj = chat.toObject();
-            const unread = countUnread(chat._id, chatroom);
-            const fullChat = {...chatObj, unread};
+        return {chat, chatroom};
+    } catch (err) {
+        console.error('메시지 저장 오류: ', err);
+        throw err;
+    }
+}
 
-            io.to(roomId).emit('send-message', {
-                chat: fullChat,
-            });
-            
-            //메시지 전송시 개별 회원 채팅방 목록에 preview 전달
-            chatroom.members.forEach(m => {
-                const socketId = onlineMembers[m.member._id.toString()];
-                if (socketId) {
-                    io.to(socketId).emit('send-preview', {roomId, message});
-                }
-            });
-            
-        } catch (err) {
-            console.error('메시지 전송 오류: ', err);
-            throw err;
-        }
-    });
-    
+async function getMessageForSending(chat, chatroom) {
+    try {
+        await chat.populate('sender', 'id name');
+        const chatObj = chat.toObject();
+        const unread = countUnread(chat._id, chatroom);
+        const fullChat = {...chatObj, unread};
+
+        return fullChat;
+    } catch (err) {
+        console.error('메시지 전송 전처리 오류: ', err);
+        throw err;
+    }
 }
 
 function countUnread(messageId, chatroom) {
-    /*
-    const readInfo = chatroom.readBy.find(r => r.member.toString() === memberId);
-    const readId = readInfo?.readId || new mongoose.Types.ObjectId('000000000000000000000000');
+    try {
+        const unread = chatroom.readBy.filter(r => {
+            if (!r.readId) return true;
+            return r.readId < messageId;
+        }).length;
 
-    const unread = chatroom.readBy.filter(r => !r.readId || r.readId < msg._id).length;
-    return unread;*/
-
-    const unread = chatroom.readBy.filter(r => {
-        if (!r.readId) return true;
-        return r.readId < messageId;
-    }).length;
-
-    return unread;
+        return unread;
+    } catch (err) {
+        console.error('읽음 상태 조회 오류: ', err);
+        throw err;
+    }
 }
 
-//lastTime에서 lastMessageId로 수정하도록.
 async function getMessage(roomId, memberId, lastMessageId=null, limit=15, direction="before") {
     try {
         const isIn = await checkOn(roomId, memberId);
@@ -131,13 +119,6 @@ async function getMessage(roomId, memberId, lastMessageId=null, limit=15, direct
         //각 메시지에 unread 계산
         //reverse: 보여지는 화면이 아래서 위가 아니라 위에서 아래가 되도록.
         const result = slicedMessages.map(msg => {
-            /*
-            const readInfo = chatroom.readBy.find(r => r.member.toString() === memberId);
-            const readId = readInfo?.readId || new mongoose.Types.ObjectId('000000000000000000000000');
-
-            const unread = chatroom.readBy.filter(r => !r.readId || r.readId < msg._id).length;
-            */
-
             const unread = countUnread(msg._id, chatroom);
             return {
                 ...msg.toObject(),
@@ -156,119 +137,139 @@ async function getMessage(roomId, memberId, lastMessageId=null, limit=15, direct
         };
 
     } catch (err) {
-        console.error(err);
+        console.error('메시지 조회 오류: ', err);
         throw err;
     }
 }
 
 async function addRead(roomId, memberId, chatId) {
-    const chatroom = await ChatRoom.findById(roomId);
-    const index = chatroom.readBy.findIndex(r => r.member.toString() === memberId);
-    if (index >= 0) {
-        const isNew = chatroom.readBy[index].readId < chatId;
+    try {
+        const chatroom = await ChatRoom.findById(roomId);
+        if (!chatroom) throw new CustomError('NOT_FOUND', '채팅방 정보를 찾을 수 없습니다.');
+        const index = chatroom.readBy.findIndex(r => r.member.toString() === memberId);
+        if (index >= 0) {
+            const isNew = chatroom.readBy[index].readId < chatId;
 
-        if (isNew) {
-            await ChatRoom.updateOne(
-                {_id: roomId, 'readBy.member': memberId},
-                {$set: {'readBy.$.readId': chatId}}
-            );
+            if (isNew) {
+                await ChatRoom.updateOne(
+                    {_id: roomId, 'readBy.member': memberId},
+                    {$set: {'readBy.$.readId': chatId}}
+                );
+            }
         }
+    } catch (err) {
+        console.error('읽음 상태 갱신 오류: ', err);
+        throw err;
     }
 } 
 
-async function addNewRead(io, socket) {
-    socket.on('add-read', async ({roomId, chat}) => {
-        const memberId = socket.member.id;
+async function addNewRead(memberId, roomId, chat) {
+    try {
         await addRead(roomId, memberId, chat._id);
         const chatroom = await ChatRoom.findById(roomId);
         const unread = countUnread(chat._id, chatroom);
-        io.to(roomId).emit('update-read', {chatId: chat._id, unread});
-    });
+        return unread;
+    } catch (err) {
+        console.error('새 메시지 읽음 처리 오류: ', err);
+        throw err;
+    }
 }
 
-async function deleteMessage(io, socket) {
-    socket.on('delete-message', async ({roomId, messageId}) => {
-        const chat = await Chat.updateOne(
+async function deleteMessage(messageId) {
+    try {
+        await Chat.updateOne(
             {_id: messageId},
             {$set: {'content': '삭제된 메시지입니다.', 'deleted': true}},
         );
-        
-        io.to(roomId).emit('update-deleted', messageId);
-    });
+    } catch (err) {
+        console.error('메시지 삭제 오류: ', err);
+        throw err;
+    }
 }
 
 async function readAll(roomId, memberId) {
-    const chatroom = await ChatRoom.findById(roomId);
-    if (!chatroom) throw new CustomError('NOT_FOUND', '채팅방 정보를 찾을 수 없습니다.');
-    const isIn = await checkOn(roomId, memberId);
-    if (!isIn) throw new CustomError('FORBIDDEN', '채팅방 조회 권한이 없습니다.');
-    const chatRead = await ChatRoom.findOne(
-        {_id: roomId},
-        {readBy: {$elemMatch: {member: memberId}}}
-    );
-
-    const lastReadId = chatroom.lastMessage;
-    await addRead(roomId, memberId, lastReadId);
-
-    if (chatRead.readBy[0]?.readId) {
-        const prevReadId = chatRead.readBy[0]?.readId;
-        return {prevReadId, lastReadId};
-    } else {
-        const joined = await ChatRoom.findOne(
+    try {
+        const chatroom = await ChatRoom.findById(roomId);
+        if (!chatroom) throw new CustomError('NOT_FOUND', '채팅방 정보를 찾을 수 없습니다.');
+        const isIn = await checkOn(roomId, memberId);
+        if (!isIn) throw new CustomError('FORBIDDEN', '채팅방 조회 권한이 없습니다.');
+        const chatRead = await ChatRoom.findOne(
             {_id: roomId},
-            {members: {$elemMatch: {member: memberId}}}
+            {readBy: {$elemMatch: {member: memberId}}}
         );
-        const prevReadId = joined.members[0]?.joinedAt;
-        return {prevReadId, lastReadId};
+
+        const lastReadId = chatroom.lastMessage;
+        await addRead(roomId, memberId, lastReadId);
+
+        if (chatRead.readBy[0]?.readId) {
+            const prevReadId = chatRead.readBy[0]?.readId;
+            return {prevReadId, lastReadId};
+        } else {
+            const joined = await ChatRoom.findOne(
+                {_id: roomId},
+                {members: {$elemMatch: {member: memberId}}}
+            );
+            const prevReadId = joined.members[0]?.joinedAt;
+            return {prevReadId, lastReadId};
+        }
+    } catch (err) {
+        console.error('읽음 최신 상태 갱신 오류: ', err);
+        throw err;
     }
 }
 
 async function searchMessage(roomId, memberId, keyword, limit=20, lastMessageId=null) {
-    const isIn = await checkOn(roomId, memberId);
-    if (!isIn) throw new CustomError('FORBIDDEN', '채팅방 조회 권한이 없습니다.');
+    try {
+        const isIn = await checkOn(roomId, memberId);
+        if (!isIn) throw new CustomError('FORBIDDEN', '채팅방 조회 권한이 없습니다.');
 
-    if (!roomId) throw new CustomError('NOT_FOUND', '채팅방 정보를 찾을 수 없습니다.');
+        if (!roomId) throw new CustomError('NOT_FOUND', '채팅방 정보를 찾을 수 없습니다.');
 
-    const chatroom = await ChatRoom.findById(roomId);
-    if (!chatroom) throw new CustomError('NOT_FOUND', '채팅방 정보를 찾을 수 없습니다.');
-    
-    const memberInfo = chatroom.members.filter(
-            m => m.member._id.toString() === memberId.toString());
-    
-    let query = {
-        roomId: roomId,
-        $text: {$search: keyword},
-        time: {$gte: memberInfo[0].joinedAt}
-    };
+        const chatroom = await ChatRoom.findById(roomId);
+        if (!chatroom) throw new CustomError('NOT_FOUND', '채팅방 정보를 찾을 수 없습니다.');
+        
+        const memberInfo = chatroom.members.filter(
+                m => m.member._id.toString() === memberId.toString());
+        
+        let query = {
+            roomId: roomId,
+            $text: {$search: keyword},
+            time: {$gte: memberInfo[0].joinedAt}
+        };
 
-    if (lastMessageId) {
-        query._id = {$lt: mongoose.Types.ObjectId.createFromHexString(lastMessageId.toString())};
+        if (lastMessageId) {
+            query._id = {$lt: mongoose.Types.ObjectId.createFromHexString(lastMessageId.toString())};
+        }
+
+        const searched = await Chat.find(query)
+            .sort({time: - 1})
+            .limit(limit + 1)
+            .exec();
+
+        const result = {message: [], success: true};
+        if (searched.length === 0) return result;
+        result.hasMore = (searched.length > limit ? true : false);
+        const slicedMessages = (result.hasMore ? searched.slice(0, limit) : searched);
+        //hasMore 조회해서 prefetch 사용하도록
+
+        const messageLimit = 10;
+
+        for (const s of slicedMessages) {
+            const before = await getMessage(roomId, memberId, s._id, messageLimit, 'before');
+            const after = await getMessage(roomId, memberId, s._id, messageLimit, 'after');
+            const center = await getMessage(roomId, memberId, s._id, 1, 'center');
+
+            const beforeAfter = {before, center, after};
+
+            result.message.push(beforeAfter);
+        }
+
+        return result;
+    } catch (err) {
+        console.error('메시지 검색 오류: ', err);
+        throw err;
     }
-
-    const searched = await Chat.find(query)
-        .sort({time: - 1})
-        .limit(limit + 1)
-        .exec();
-
-    const result = {message: [], success: true};
-    if (searched.length === 0) return result;
-    result.hasMore = (searched.length > limit ? true : false);
-    const slicedMessages = (result.hasMore ? searched.slice(0, limit) : searched);
-    //hasMore 조회해서 prefetch 사용하도록
-
-    const messageLimit = 10;
-
-    for (const s of slicedMessages) {
-        const before = await getMessage(roomId, memberId, s._id, messageLimit, 'before');
-        const after = await getMessage(roomId, memberId, s._id, messageLimit, 'after');
-        const center = await getMessage(roomId, memberId, s._id, 1, 'center');
-
-        const beforeAfter = {before, center, after};
-
-        result.message.push(beforeAfter);
-    }
-
-    return result;
 }
 
-module.exports = {checkOn, sendMessage, getMessage, addNewRead, readAll, deleteMessage, searchMessage};
+module.exports = {checkOn, saveMessageAndUpdateRead, getMessageForSending,
+    getMessage, addNewRead, readAll, deleteMessage, searchMessage};

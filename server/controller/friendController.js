@@ -45,7 +45,11 @@ async function cancelFriendRequest(req, res, next) {
         const memberId = req.member.id;
         const requestId = req.params.requestId;
         const result = await friendService.cancelFriendRequest(memberId, requestId);
-        if (result.success) return res.status(200).json(result);
+        if (result.success) {
+            const io = getIO();
+            io.to(result.receiver).emit('friend-request-cancel', {id: requestId});
+            return res.status(200).json(result);
+        }
         return next(new CustomError('INTERNAL_SERVER_ERROR'));
     } catch (err) {
         console.error('친구 요청 취소 오류: ', err);
@@ -127,6 +131,7 @@ async function sendFriendRequest(req, res, next) {
         const result = await friendService.sendFriendRequest(memberId, receiver);
         const unread = await friendService.countUnreadRequest(receiver);
         const io = getIO();
+        io.to(receiver).emit('send-friend-request');
         io.to(receiver).emit('friend-request-alarm', {unread});
         if (result.success) return res.status(200).json(result);
         return next(new CustomError('INTERNAL_SERVER_ERROR'));
