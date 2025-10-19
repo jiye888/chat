@@ -225,8 +225,6 @@ async function searchMember(memberId, name, page, limit=20, sortOrder="asc") {
         }).filter(Boolean); // falsy 값 제거 위해
 
         const processed = members.map(member => {
-            //const isFriend = member._id.toString() !== memberId &&
-                //member.friends.some(friendId => friendId.toString() === memberId.toString());
             const isFriend = member._id.toString() !== memberId &&
                 friendArray.includes(member._id);
 
@@ -242,7 +240,6 @@ async function searchMember(memberId, name, page, limit=20, sortOrder="asc") {
 
         const total = await Member.countDocuments(query);
 
-        //if (total === 0) return {success: true, message: '조회 가능한 사용자가 없습니다.'};
         return {
             success: true,
             message: '사용자 검색에 성공했습니다.',

@@ -2,6 +2,7 @@ const chatRoomService = require('../service/chatRoomService');
 const chatService = require('../service/chatService');
 const {getIO} = require('../socket');
 const CustomError = require('../error/CustomError');
+const {onlineMembers} = require('../onlineMembers');
 
 async function createChatRoom(req, res, next) {
     try {
@@ -79,8 +80,9 @@ async function inviteRoom(req, res, next) {
         const result = await chatRoomService.inviteRoom(memberId, roomId, inviteList);
         if (result.success) {
             const io = getIO();
-            for (const invite of inviteList) { //if onlineMembers 사용?
-                io.to(invite).emit('invite-room');
+            for (const invite of inviteList) {
+                const socketId = onlineMembers[invite];
+                if (socketId) io.to(socketId).emit('invite-room');
             }
             const systemMessages = result.systemMessages;
             io.to(roomId).emit('invite-notice', {systemMessages});

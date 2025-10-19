@@ -43,8 +43,6 @@ export default function Friend() {
     // 즐겨찾기 상태 토글하는 함수
     const toggleFavorite = async (friendId) => {
         try {
-            // 서버에 즐겨찾기 상태 변경 요청
-            // 서버의 변경이 완료되면 새 목록 가져와야
             await axios.patch(`/friend/${friendId}/favorite`, {
                 isFavorite: !friends.find(f => f._id === friendId).isFavorite
             });
@@ -171,7 +169,6 @@ export default function Friend() {
                                     onClose={() => setShowNameModal(false)}
                                     onSave={() => changeNickname(f._id)}
                                     message={'친구 별명 설정'}
-                                    //value={f.nickname ? f.nickname : f.name}
                                     value={tempNickName}
                                     onChange={setTempNickName}
                                 />

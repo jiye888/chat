@@ -59,7 +59,6 @@ export default function FriendRequest({clearBadge}) {
         }
     }
 
-    //* socket 필요할지 확인
     useEffect(() => {
         socket.on('send-friend-request', () => {
         });

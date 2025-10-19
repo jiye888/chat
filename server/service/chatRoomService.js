@@ -31,7 +31,6 @@ async function createChatRoom(memberId, roomName) {
 //초대입장
 async function inviteRoom(memberId, roomId, inviteList) {
   try {
-    //알림은 controller에서 처리 && 메서드 내용 수정할 것... inviteList
     const chatroom = await ChatRoom.findById(roomId);
     if (!chatroom) throw new CustomError('NOT_FOUND', '채팅방 정보를 찾을 수 없습니다.');
 

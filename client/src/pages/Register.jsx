@@ -1,7 +1,5 @@
 import {useState} from 'react';
-//import {axiosInstance as axios} from '../api/axiosInstance';
 import axios from 'axios';
-import {useErrorHandler} from '../hook/useErrorhandler';
 import {useNavigate} from 'react-router';
 import MessageModal from '../components/MessageModal';
 
@@ -16,8 +14,6 @@ export default function Register() {
     
     const [errMessage, setErrMessage] = useState('');
     const [showErrorModal, setShowErrorModal] = useState(false);
-
-    const errorHandler = useErrorHandler();
 
     const handleSubmit = async (e) => {
         e.preventDefault();
@@ -43,7 +39,6 @@ export default function Register() {
             setPasswordCheck('');
             navigate('/');
         } catch (err) {
-            //errorHandler(err);
             const errorCode = err?.response?.data?.code?.toString();
             const errorMessage = err?.response?.data?.message?.toString();
 

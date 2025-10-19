@@ -1,10 +1,8 @@
 import {useState, useEffect} from 'react';
-//import {useAuth} from '../auth/useAuth';
 import {axiosInstance as axios} from '../api/axiosInstance';
 import MessageModal from '../components/MessageModal';
 
 export default function MemberSearch() {
-    //const {memberId} = useAuth();
     const [query, setQuery] = useState(''); // 입력칸의 값
     const [searchQuery, setSearchQuery] = useState(''); // 입력칸에서 실제 실행에 쓰는 값
     const [members, setMembers] = useState([]);

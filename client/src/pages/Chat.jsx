@@ -26,7 +26,7 @@ export default function Chat() {
         index: 0,
         result: [],
         hasMore: true,
-    }); //하나로 관리하기
+    }); // 검색 결과를 state 하나로 관리하기
 
     const searchInputRef = useRef('');
     const firstScrollRef = useRef(true); // 일반 채팅 초기 열람(스크롤 최하단 위치)
@@ -251,7 +251,6 @@ export default function Chat() {
     const endSearchMode = () => {
         setSearch((prev) => ({...prev, searchMode: false, index: 0}));
         centerRef.current = null;
-        //firstScrollRef.current = true; //검색 종료 후 스크롤 초기화 할 것인지?
     }
 
     useLayoutEffect(() => { // 검색 실행시 스크롤 안 움직이는 문제 해결 위해
@@ -622,8 +621,6 @@ export default function Chat() {
     const handleSend = () => {
         if (input.trim() === '') return;
 
-        //const newMessage = {text: input, from: 'user'};
-        //setMessages([...messages, newMessage]);
         socket.emit('save-message', {roomId, message: input});
         setInput('');
     };

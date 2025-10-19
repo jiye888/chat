@@ -13,7 +13,6 @@ export default function Invite() {
     const [errMessage, setErrMessage] = useState('');
     const [showErrorModal, setShowErrorModal] = useState(false);
     
-    const {socket} = useSocket();
     const {roomId} = useParams();
     const navigate = useNavigate();
 

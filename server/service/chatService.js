@@ -1,6 +1,5 @@
 const Chat = require('../model/Chat');
 const ChatRoom = require('../model/ChatRoom');
-const Member = require('../model/Member');
 const mongoose = require('../db/mongoose');
 const CustomError = require('../error/CustomError');
 

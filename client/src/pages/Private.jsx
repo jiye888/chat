@@ -26,8 +26,6 @@ export default function Private() {
     const [errMessage, setErrMessage] = useState('');
     const [showErrorModal, setShowErrorModal] = useState(false);
 
-    //회원 정보 수정, 회원 탈퇴
-
     const handleSaveName = async () => {
         setName(tempName);
         setShowNameModal(false);
